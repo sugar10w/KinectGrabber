@@ -7,7 +7,7 @@
  *
  */
 
-#include "pcl_filter/2dmask_filter.h"
+#include "pointcloud_filter/2dmask_filter.h"
 
 namespace tinker {
 namespace vision {

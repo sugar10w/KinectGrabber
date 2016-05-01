@@ -11,7 +11,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "common.h"
-#include "object_builder/object_cluster.h"
+#include "pointcloud_recognition/object_cluster.h"
 
 namespace tinker {
 namespace vision {

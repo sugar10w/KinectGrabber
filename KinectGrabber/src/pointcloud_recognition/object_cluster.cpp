@@ -6,7 +6,7 @@
   *
   */
  
- #include "object_builder/object_cluster.h"
+ #include "pointcloud_recognition/object_cluster.h"
  
  #include <sstream>
  

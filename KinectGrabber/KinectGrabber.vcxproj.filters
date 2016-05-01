@@ -18,22 +18,19 @@
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\object_builder\object_cluster.cpp">
+    <ClCompile Include="src\pointcloud_recognition\edge_cluster_divider.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\pcl_filter\2dmask_filter.cpp">
+    <ClCompile Include="src\pointcloud_recognition\object_cluster.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\pcl_filter\depth_edge_detector.cpp">
+    <ClCompile Include="src\pointcloud_recognition\2d_cluster_divider.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\object_builder\2d_cluster_divider.cpp">
+    <ClCompile Include="src\pointcloud_filter\2dmask_filter.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\object_builder\edge_cluster_divider.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\pcl_filter\plane_filter.cpp">
+    <ClCompile Include="src\pointcloud_filter\rgbd_plane_detector.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

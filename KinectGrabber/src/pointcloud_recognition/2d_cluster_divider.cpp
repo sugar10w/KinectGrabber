@@ -6,12 +6,12 @@
  */
 
 
-#include "object_builder/2d_cluster_divider.h"
+#include "pointcloud_recognition/2d_cluster_divider.h"
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include "pcl_filter/2dmask_filter.h"
+#include "pointcloud_filter/2dmask_filter.h"
 
 namespace tinker {
 namespace vision {
@@ -35,10 +35,9 @@ std::vector<ObjectCluster> ClusterDivider2D::GetDividedCluster()
     {
         double cont_size = cv::contourArea(contours[idx]);
         if (cont_size>20000) continue;
-        cv::Mat inside = cv::Mat::zeros(mask_.size(), CV_8UC3);
-        cv::Mat sub_mask;
-        cv::drawContours(inside, contours, idx, cv::Scalar(255,255,255), CV_FILLED, 4);
-        cv::cvtColor(inside, sub_mask, CV_RGB2GRAY);
+
+        cv::Mat sub_mask(mask_.size(), CV_8UC1, cv::Scalar(0));
+        cv::drawContours(sub_mask, contours, idx, cv::Scalar(255), CV_FILLED, 4);
 
         if (cont_size<300)
         {

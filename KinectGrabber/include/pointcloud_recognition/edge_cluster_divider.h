@@ -10,7 +10,7 @@
 #define __EDGE_CLUSTER_DIVIDER_H__
 
 #include <opencv2/opencv.hpp>
-#include "object_builder/object_cluster.h"
+#include "pointcloud_recognition/object_cluster.h"
 #include "common.h"
 
 namespace tinker {

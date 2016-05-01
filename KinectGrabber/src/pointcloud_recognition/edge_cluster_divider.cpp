@@ -7,8 +7,8 @@
  */
 
 
-#include "object_builder/edge_cluster_divider.h"
-#include "pcl_filter/2dmask_filter.h"
+#include "pointcloud_recognition/edge_cluster_divider.h"
+#include "pointcloud_filter/2dmask_filter.h"
 
 namespace tinker {
 namespace vision {
@@ -37,18 +37,16 @@ std::vector<ObjectCluster> EdgeClusterDivider::GetDividedCluster()
         {
             continue;
         }
-
-        cv::Mat inside = cv::Mat::zeros(mask_.size(), CV_8UC3);
-        cv::Mat sub_mask;
-        cv::drawContours(inside, contours, idx, cv::Scalar(255,255,255), CV_FILLED, 4);
-        cv::cvtColor(inside, sub_mask, CV_RGB2GRAY);
+        
+        cv::Mat sub_mask(mask_.size(), CV_8UC1, cv::Scalar(0));
+        cv::drawContours(sub_mask, contours, idx, cv::Scalar(255), CV_FILLED, 4);
        
         double valid_area=0;
-        for (int i=0; i<inside.rows; ++i)
-            for (int j=9; j<inside.cols; ++j)
-                if (inside.at<cv::Vec3b>(i,j)[0] && no_plane_mask_.at<uchar>(i,j)) valid_area+=1;
+        for (int i=0; i<sub_mask.rows; ++i)
+            for (int j=0; j<sub_mask.cols; ++j)
+                if (sub_mask.at<uchar>(i,j) && no_plane_mask_.at<uchar>(i,j)) valid_area+=1;
 
-        if (valid_area/cont_size>0.6)
+        if (valid_area/cont_size>0.5)
         {
             ObjectCluster object_cluster( GetCloudFromMask(sub_mask, cloud_));
             if (object_cluster.isValid())
