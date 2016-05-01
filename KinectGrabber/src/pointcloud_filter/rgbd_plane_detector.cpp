@@ -294,12 +294,12 @@ static cv::Mat GetMaskFromEdge(PointCloudConstPtr & cloud, PointCloudNTPtr & nor
 /* 基于法向量去除点云中的平面 */
 cv::Mat GetNoPlaneMask(PointCloudConstPtr & cloud)
 {
-    /* 计算法向量 */
+    /* 声明法向量 */
     PointCloudNTPtr normals(new pcl::PointCloud<PointNT>);
     normals->width = cloud->width; 
     normals->height = cloud->height;
     normals->resize(normals->width*normals->height);
-
+    /* 计算法向量 */
     pcl::IntegralImageNormalEstimation<PointT, PointNT> ne;
     ne.setNormalEstimationMethod(ne.AVERAGE_DEPTH_CHANGE );
     ne.setDepthDependentSmoothing(false);

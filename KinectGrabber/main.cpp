@@ -30,21 +30,31 @@ using namespace tinker::vision;
 
 pcl::visualization::PCLVisualizer::Ptr viewer(
         new pcl::visualization::PCLVisualizer( "3D Object Detector" ) );
-bool flag_paused = false;
-bool flag_draw_box = false;
+bool flag_paused = false;   //p
+bool flag_draw_box = false; //d
+bool flag_debug = false;    //b
+bool flag_color = false;    //v
 
 /* 设置键盘响应 */
 void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event)
 {
-    if (event.getKeySym () == "p" && event.keyDown ())
+    if (event.getKeySym() == "p" && event.keyDown())
     {
         flag_paused = !flag_paused;
     }
-    if (event.getKeySym () == "d" && event.keyDown ())
+    if (event.getKeySym() == "d" && event.keyDown())
     {
         flag_draw_box = !flag_draw_box;
     }
-    if (event.getKeySym () == "r" && event.keyDown ())
+    if (event.getKeySym() == "b" && event.keyDown())
+    {
+        flag_debug = !flag_debug;
+    }
+    if (event.getKeySym() == "v" && event.keyDown())
+    {
+        flag_color = !flag_color;
+    }
+    if (event.getKeySym() == "r" && event.keyDown())
     {
         viewer->setCameraPosition( 0.0, 0.0, -2.5, 0.0, 0.0, 0.0 );
     }
@@ -93,64 +103,67 @@ int main( int argc, char* argv[] )
 
                 /* 处理点云 */
 
-                /* 获取二维BGR图片 */
-                cv::Mat img(cloud->height, cloud->width, CV_8UC3);
-                const PointT* pt = & cloud->points[0];
-                for (int i=0; i<cloud->height; ++i)
-                    for (int j=cloud->width-1; j>=0; --j)
-                    {
-                        cv::Vec3b & img_point = img.at<cv::Vec3b>(i, j);
-                        img_point[0] = pt->b;
-                        img_point[1] = pt->g;
-                        img_point[2] = pt->r;
-                        ++pt;
-                    }
-                cv::imshow("raw RGB", img);
-
                 /* 去平面 */
                 cv::Mat no_plane_mask = GetNoPlaneMask(cloud);
                 OpenImage(no_plane_mask, 0, 2, 0);
-                cv::imshow("no_plane_mask", no_plane_mask);
+                if (flag_debug) cv::imshow("no_plane_mask", no_plane_mask);
 
                 /* 边缘拉伸点 */
                 cv::Mat shard_mask = ~GetShardMask(cloud);
                 //OpenImage(shard_mask, 0, 1, 0);
-                cv::imshow("shard_mask", shard_mask);
+                if (flag_debug) cv::imshow("shard_mask", shard_mask);
 
                 /* EdgeClusterDivider */
-                EdgeClusterDivider pre_cluster_divider(cloud, shard_mask, no_plane_mask);
-                std::vector<ObjectCluster> pre_clusters = pre_cluster_divider.GetDividedCluster();
-                shard_mask = pre_cluster_divider.GetShardMask();
+                EdgeClusterDivider cluster_divider_0(cloud, shard_mask, no_plane_mask);
+                std::vector<ObjectCluster> clusters_0 = cluster_divider_0.GetDividedCluster();
+                /* 更新shard_mask, 防止区域的重复判定 */
+                shard_mask = cluster_divider_0.GetShardMask();
 
-                /* ClusterDivider2D */
+                /* (待判定)ClusterDivider2D */
                 OpenImage(no_plane_mask, 0, 2, 0);
                 cv::Mat mask = shard_mask & no_plane_mask;
-                ClusterDivider2D cluster_divider(cloud, mask);
-                std::vector<ObjectCluster> clusters;
-                
+                ClusterDivider2D cluster_divider_1(cloud, mask);
+                std::vector<ObjectCluster> clusters_1;
                 /* 判定是否进行第2步 */
-                if (pre_clusters.size() <= 5)
+                if (clusters_0.size() <= 5)
                 {
-                    clusters = cluster_divider.GetDividedCluster();
+                    clusters_1 = cluster_divider_1.GetDividedCluster();
                     /* 综合两种提取方式的结果 */
-                    mask = pre_cluster_divider.GetMask() | cluster_divider.GetMask();
+                    mask = cluster_divider_0.GetMask() | cluster_divider_1.GetMask();
                 }
                 else 
                 {
-                    mask = pre_cluster_divider.GetMask();
+                    mask = cluster_divider_0.GetMask();
                 }
 
-                /* 显示二维过滤结果 */
-                for (int i=0; i<mask.rows; ++i)
-                    for (int j=0; j<mask.cols; ++j)
-                        if (! mask.at<uchar>(i,j))
+                if (flag_color)
+                {
+                    /* 获取二维BGR图片 */
+                    cv::Mat img(cloud->height, cloud->width, CV_8UC3);
+                    const PointT* pt = & cloud->points[0];
+                    for (int i=0; i<cloud->height; ++i)
+                        for (int j=cloud->width-1; j>=0; --j)
                         {
-                            cv::Vec3b & point = img.at<cv::Vec3b>(i,j);
-                            /* 背景部分 灰度, 变暗 */
-                            point[0] = point[1] = point[2] = 
-                                (point[0]+point[1]+point[2])/6;
+                            cv::Vec3b & img_point = img.at<cv::Vec3b>(i, j);
+                            img_point[0] = pt->b;
+                            img_point[1] = pt->g;
+                            img_point[2] = pt->r;
+                            ++pt;
                         }
-                cv::imshow("2D Result", img);
+                    cv::imshow("raw RGB", img);
+
+                    /* 显示二维过滤结果 */
+                    for (int i=0; i<mask.rows; ++i)
+                        for (int j=0; j<mask.cols; ++j)
+                            if (! mask.at<uchar>(i,j))
+                            {
+                                cv::Vec3b & point = img.at<cv::Vec3b>(i,j);
+                                /* 背景部分 灰度, 变暗 */
+                                point[0] = point[1] = point[2] = 
+                                    (point[0]+point[1]+point[2])/6;
+                            }
+                    cv::imshow("2D Result", img);
+                }
 
                 /* 显示点云 */
                 PointCloudPtr display_cloud = GetCloudFromMask(mask, cloud);
@@ -160,13 +173,13 @@ int main( int argc, char* argv[] )
                 if (flag_draw_box)
                 {
                     viewer->removeAllShapes();
-                    for (int i=0; i<clusters.size(); ++i)
+                    for (int i=0; i<clusters_0.size(); ++i)
                     {
-                        clusters[i].DrawBoundingBox(*viewer, i);
+                        clusters_0[i].DrawBoundingBox(*viewer, i);
                     }
-                    for (int i=0;  i<pre_clusters.size(); ++i)
+                    for (int i=0;  i<clusters_1.size(); ++i)
                     {
-                        pre_clusters[i].DrawBoundingBox(*viewer, i);
+                        clusters_1[i].DrawBoundingBox(*viewer, i);
                     }
                     flag_draw_box = false;
                 }
