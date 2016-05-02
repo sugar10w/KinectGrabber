@@ -27,19 +27,18 @@ PointCloudPtr GetCloudFromMask(const cv::Mat & mask, const PointCloudConstPtr & 
         {
             uchar img_point = mask.at<uchar>(i, j);
             if (img_point) indices.push_back(k);
-            k++;
+            ++k;
         }
 
     PointCloudPtr extracted_cloud(new PointCloud);
     extracted_cloud->width = indices.size();
     extracted_cloud->height = 1;
-    extracted_cloud->resize(indices.size());
-    extracted_cloud->is_dense = false;
+    extracted_cloud->is_dense = true;
 
-    PointT *pt = & extracted_cloud->points[0];
-    for (int i=0; i<indices.size(); ++i, ++pt)
+    for (int i=0; i<indices.size(); ++i)
     {
-        *pt = cloud->points[ indices[i] ];
+        extracted_cloud->points.push_back(
+            cloud->points[ indices[i] ]);
     }
 
     return extracted_cloud;
