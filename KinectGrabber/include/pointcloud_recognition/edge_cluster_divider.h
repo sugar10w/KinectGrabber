@@ -20,7 +20,7 @@ class EdgeClusterDivider
 {
 public:
     EdgeClusterDivider(PointCloudConstPtr & cloud, cv::Mat & shard_mask, cv::Mat & no_plane_mask);
-    std::vector<ObjectCluster> GetDividedCluster();
+    void GetDividedCluster(std::vector<ObjectCluster>& divided_objects);
     inline cv::Mat GetMask() { return mask_; }
     inline cv::Mat GetShardMask() { return shard_mask_; }
 private:

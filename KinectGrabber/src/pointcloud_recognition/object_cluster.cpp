@@ -19,7 +19,13 @@
  {
      int n = cloud->width * cloud->height;
      int r_sum = 0, g_sum = 0, b_sum = 0, cnt = 0;
- 
+    
+     if (n<300) 
+     {
+         valid_ = false; 
+         return;
+     }
+
      valid_ = true;
 
      x_min = y_min = z_min = 10000;
@@ -38,23 +44,22 @@
          if (point.z<z_min) z_min = point.z;
          if (point.z>z_max) z_max = point.z;
 
-         if (point.z>2.00)
-         {
-             valid_= false;
-             break;
-         }
+         //if (point.z>2.00)
+         //{
+         //    valid_= false;
+         //    break;
+         //}
 
          r_sum += point.r;
          g_sum += point.g;
          b_sum += point.b;
      }
      
-     if (valid_)
-     {
-         r_avg = r_sum / cnt; if (r_avg>255) r_avg = 255;
-         g_avg = g_sum / cnt; if (g_avg>255) g_avg = 255;
-         b_avg = b_sum / cnt; if (b_avg>255) b_avg = 255;
-     }
+     if (z_max<0.5 || z_min>10.0) { valid_ = false; return; }
+
+     r_avg = r_sum / cnt; if (r_avg>255) r_avg = 255;
+     g_avg = g_sum / cnt; if (g_avg>255) g_avg = 255;
+     b_avg = b_sum / cnt; if (b_avg>255) b_avg = 255; 
 
      //r_avg = g_avg = b_avg = 255;
      xx = x_max - x_min;
@@ -66,7 +71,8 @@
          valid_ 
          && xx < 0.50 
          && yy < 0.50
-         && yy*xx < cnt*leaf_size_*leaf_size_*3
+         && zz < 0.50
+         //&& yy*xx < cnt*leaf_size_*leaf_size_*3
          && 6 * (x_max - x_min) > (y_max - y_min)
          && 6 * (y_max - y_min) > (x_max - x_min);
      /*if (leaf_size_!=0) valid_ = 
@@ -81,11 +87,11 @@
  {
      if (!valid_) return;
 
-     if (xx<0.05 || yy<0.05 || zz<0.05) return;
+     //if (xx<0.05 || yy<0.05) return;
 
      std::stringstream box_name;
      box_name << "object_box_" << object_number;
-     viewer.removeShape(box_name.str());
+     //viewer.removeShape(box_name.str());
  
      viewer.addCube(
              x_min, x_max, y_min, y_max, z_min, z_max,

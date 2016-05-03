@@ -22,10 +22,8 @@ ClusterDivider2D::ClusterDivider2D(PointCloudConstPtr & cloud, cv::Mat mask)
 {
 }
 
-std::vector<ObjectCluster> ClusterDivider2D::GetDividedCluster()
+void ClusterDivider2D::GetDividedCluster(std::vector<ObjectCluster>& divided_objects)
 {
-    std::vector<ObjectCluster> divided_clouds;
-
     cv::Mat contour = ~mask_;
 
     std::vector<std::vector<cv::Point> > contours;
@@ -45,10 +43,11 @@ std::vector<ObjectCluster> ClusterDivider2D::GetDividedCluster()
             continue;
         }
 
+        OpenImage(sub_mask, 0, 1, 0);
         ObjectCluster object_cluster( GetCloudFromMask(sub_mask, cloud_));
         if (object_cluster.isValid())
         {
-            divided_clouds.push_back(object_cluster);
+            divided_objects.push_back(object_cluster);
         }
         else
         {
@@ -56,8 +55,6 @@ std::vector<ObjectCluster> ClusterDivider2D::GetDividedCluster()
         }
 
     }
-
-    return divided_clouds;
 }
 
 

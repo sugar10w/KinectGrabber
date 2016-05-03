@@ -174,10 +174,13 @@ static void ConnectDepthMask(PointCloudConstPtr & cloud, cv::Mat & mask)
             //直接获取持续线段范围
             int start = y, end = y+1;
             while ( end<cloud->width && !mask.at<uchar>(x, end)) ++end;
+            if (end>=cloud->width) break;
             --end;
 
-            //检查线段合法性。无效线段则填入(0,0)。
-            if (end-start<=5) { pair_list.push_back(cv::Vec2i(0,0)); y=end+1; continue;}
+            //检查线段合法性
+            if (end-start<=8) { /*pair_list.push_back(cv::Vec2i(0,0));*/ y=end+1; continue;}
+            if (start==0) { y=end+1; continue; }
+
             bool valid = true;
             const PointT & start_point = cloud->points[(x+1)*cloud->width-start-1];
             pcl::PointXYZ unit_vector = GetVector(start_point,cloud->points[(x+1)*cloud->width-end-1]);
@@ -190,15 +193,15 @@ static void ConnectDepthMask(PointCloudConstPtr & cloud, cv::Mat & mask)
                     break;
                 }
             if (valid) pair_list.push_back(cv::Vec2i(start, end));
-                 else  pair_list.push_back(cv::Vec2i(0,0));
+                 //else  pair_list.push_back(cv::Vec2i(0,0));
             y = end;
         }
 
         //测试相邻线段并连接
         for (int i=1; i<pair_list.size(); ++i)
         {
-            if (pair_list[i][0]==0 && pair_list[i][1]==0 ) continue;
-            if (pair_list[i-1][0]==0 && pair_list[i-1][1]==0 ) continue;
+            //if (pair_list[i][0]==0 && pair_list[i][1]==0 ) continue;
+            //if (pair_list[i-1][0]==0 && pair_list[i-1][1]==0 ) continue;
 
             bool bind = true;
             PointT start_point = cloud->points[(x+1)*cloud->width-pair_list[i-1][1]-1];
@@ -311,10 +314,14 @@ cv::Mat GetNoPlaneMask(PointCloudConstPtr & cloud)
     /* 白色部分扩张1 */
     OpenImage(edge, 1, 0, 0);
     
+    //cv::imshow("edge_0", edge);
+
     /* 先尝试修复 */
     RoughFixMask(cloud, edge);
     /* 尝试平面连接 */
     ConnectDepthMask(cloud, edge);
+
+    //cv::imshow("edge_1", edge);
 
     /* 从边缘图形中找到不是背景的小平面块，成为无平面蒙版 */
     cv::Mat no_plane_mask = GetMaskFromEdge(cloud, normals, edge);

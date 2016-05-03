@@ -20,7 +20,7 @@ class ClusterDivider2D
 {
 public:
     ClusterDivider2D(PointCloudConstPtr & cloud, cv::Mat mask);
-    std::vector<ObjectCluster> GetDividedCluster();
+    void GetDividedCluster(std::vector<ObjectCluster>& divided_objects);
     inline cv::Mat GetMask() {return mask_;}
 private:
     PointCloudConstPtr cloud_;

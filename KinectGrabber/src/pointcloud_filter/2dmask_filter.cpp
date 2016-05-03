@@ -116,22 +116,25 @@ cv::Mat GetShardMask(PointCloudConstPtr & cloud)
     for (int i=0; i<cloud->height; ++i)
         for (int j=cloud->width-1; j>=0; --j)
         {
-            if (cloud->points[k].z>2.00 || cloud->points[k].z<0.5) 
+            if (cloud->points[k].z>/*2.00*/10.00 || cloud->points[k].z<0.3) 
             {
                 mask.at<uchar>(i,j)=255;
-                k++;
+                ++k;
                 continue;
             }
 
             if (j==0 || j+1==cloud->width 
                 || i==0 || i+1==cloud->height)
             {
-                k++;
+                ++k;
                 continue;
             }
+
             const PointT pt0 = cloud->points[k],
                          pt1 = cloud->points[k+1],
-                         pt2 = cloud->points[k+cloud->width];
+                         //pt3 = cloud->points[k-1],
+                         pt2 = cloud->points[k+cloud->width]/*,
+                         pt4 = cloud->points[k-cloud->width]*/;
 
             pcl::PointXYZ pt_1 (
                 (pt0.x-pt1.x)*(pt0.x-pt1.x),
@@ -140,11 +143,24 @@ cv::Mat GetShardMask(PointCloudConstPtr & cloud)
                         pt_2 (
                 (pt0.x-pt2.x)*(pt0.x-pt2.x),
                 (pt0.y-pt2.y)*(pt0.y-pt2.y),
-                (pt0.z-pt2.z)*(pt0.z-pt2.z));
+                (pt0.z-pt2.z)*(pt0.z-pt2.z))/*,
+                        pt_3 (
+                (pt0.x-pt3.x)*(pt0.x-pt3.x),
+                (pt0.y-pt3.y)*(pt0.y-pt3.y),
+                (pt0.z-pt3.z)*(pt0.z-pt3.z)),
+                        pt_4 (
+                (pt0.x-pt4.x)*(pt0.x-pt4.x),
+                (pt0.y-pt4.y)*(pt0.y-pt4.y),
+                (pt0.z-pt4.z)*(pt0.z-pt4.z))*/;
+                        
             if ( pt_1.x+pt_1.y+pt_1.z>dist_limit
               || pt_2.x+pt_2.y+pt_2.z>dist_limit
+              //|| pt_3.x+pt_3.y+pt_3.z>dist_limit
+              //|| pt_4.x+pt_4.y+pt_4.z>dist_limit
               || pt_1.z > (pt_1.x+pt_1.y)*9
               || pt_2.z > (pt_2.x+pt_2.y)*9
+              //|| pt_3.z > (pt_3.x+pt_3.y)*9
+              //|| pt_4.z > (pt_4.x+pt_4.y)*9
              )
                 mask.at<uchar>(i,j)=255;
             k++;
