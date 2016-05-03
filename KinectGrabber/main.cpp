@@ -13,10 +13,13 @@
 #endif
 
 #include "kinect2_grabber.h"
+#include "windows.h"
 
 #include <boost/make_shared.hpp>
 
 #include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/common/transforms.h>
+#include <pcl/io/pcd_io.h>
 
 #include <opencv2/opencv.hpp>
 
@@ -27,8 +30,7 @@
 #include "common.h"
 
 using namespace tinker::vision;
-
-
+using namespace std;
 
 /* 显示点云, 以及键盘控制的各个开关 */
 pcl::visualization::PCLVisualizer::Ptr viewer(
@@ -40,10 +42,13 @@ bool flag_debug = false;    //b
 bool flag_color = false;    //v
 bool flag_integral = false; //i
 bool flag_lock = false;     //l
+bool flag_viewpoint = false;//z
+bool flag_sigma = false;    //x
+
 
 /* 特别的, 关于积分mask的设定 */
 cv::Mat integral_mask(424, 512, CV_8UC1, cv::Scalar(0));
-int count = 0;
+int count_frames = 0;
 const int MAX_COUNT = 200;
 
 /* 处理过程中的各个关键蒙版 */
@@ -52,11 +57,75 @@ cv::Mat mask(424, 512, CV_8UC1, cv::Scalar(0));
 cv::Mat shard_mask(424, 512, CV_8UC1, cv::Scalar(0));
 cv::Mat no_plane_mask(424, 512, CV_8UC1, cv::Scalar(0));
 const cv::Mat mask_all(424, 512, CV_8UC1, cv::Scalar(255));
+cv::Mat mask_downsample(424, 512, CV_8UC1, cv::Scalar(0));
 /* BGR图像 */
 cv::Mat img(424, 512, CV_8UC3, cv::Scalar(0,0,0));
 cv::Mat img_result(424, 512, CV_8UC3, cv::Scalar(0,0,0));
 /* 目标vector */
-std::vector<ObjectCluster> divided_objects;
+vector<ObjectCluster> divided_objects;
+
+/* 用于累计的点云 */
+PointCloudPtr cloud_sigma(new PointCloud);
+Eigen::Matrix4f transform_matrix = Eigen::Matrix4f::Identity();
+
+/* 从蓝牙获取的信息通过内存共享获取 */
+LPCWSTR strMapName = L"BluetoothAngleSharedMemory";
+HANDLE hMap = NULL;
+LPVOID pBuffer = NULL;
+bool MemShareIntialize()
+{
+    hMap = OpenFileMappingW(FILE_MAP_ALL_ACCESS, 0, strMapName);
+    if (NULL == hMap)
+    {
+        cout<< "警告, 没有接收到姿态信号!" <<endl;
+        return false;
+    }
+    cout << "姿态信号已连接. " <<endl;
+    return true;
+}
+void MemShareGet()
+{
+    if (NULL == hMap)
+    {
+        flag_viewpoint = false;
+        cout << "姿态信息意外掉线!(hMap) 请检查蓝牙与串口模块. " << endl;
+        return;
+    }
+    pBuffer = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+    if (NULL == pBuffer)
+    {
+        hMap = NULL;
+        flag_viewpoint = false;
+        cout << "姿态信息意外掉线!(pBuffer) 请检查蓝牙与串口模块. " << endl;
+        return;
+    }
+    
+    double* d = (double*)pBuffer;
+    double alpha, beta, gamma;
+    /*PointCloudPtr new_cloud(new PointCloud); */
+    alpha = d[0]*3.1415926/180;
+    beta  = d[1]*3.1415926/180;
+    gamma = d[2]*3.1415926/180;
+    
+    transform_matrix << 
+        cos(beta)*cos(gamma)  , -cos(alpha)*sin(beta)*cos(gamma)-sin(alpha)*sin(gamma) , -sin(alpha)*sin(beta)*cos(gamma)+cos(alpha)*sin(gamma)  , 0 ,
+        sin(beta)             , cos(beta)*cos(beta)                                    , sin(alpha)*cos(beta)                                  , 0 ,
+        -cos(beta)*sin(gamma) , cos(alpha)*sin(beta)*sin(gamma)-sin(alpha)*cos(gamma)  , sin(alpha)*sin(beta)*sin(gamma)+cos(alpha)*cos(gamma) , 0 ,
+        0                     , 0                                                      , 0                                                      , 1 ;
+
+    /*pcl::transformPointCloud(*cloud, *new_cloud, transform_matrix);
+    cloud = new_cloud;*/
+
+    //cout << "读取共享内存数据：" << d[0]<<"\t"<<d[1]<<"\t"<<d[2] << endl;
+
+}
+void RotateCloud(PointCloudPtr& cloud)
+{
+    PointCloudPtr new_cloud(new PointCloud);
+    pcl::transformPointCloud(*cloud, *new_cloud, transform_matrix);
+    cloud = new_cloud;
+}
+
 
 /* 键盘响应 */
 void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event)
@@ -72,12 +141,12 @@ void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event)
         if (flag_paused)
         {
             flag_lock = true;
-            std::cout<<"已停止接收点云信息. 已锁定结果蒙版. 已暂停对蒙版的计算."<<std::endl;
+            cout<<"已停止接收点云信息. 已锁定结果蒙版. 已暂停对蒙版的计算."<<endl;
         }
         else
         {
             flag_lock = false;
-            std::cout<<"开始接收点云信息. 已取消对结果蒙版的锁定."<<std::endl;
+            cout<<"开始接收点云信息. 已取消对结果蒙版的锁定."<<endl;
         }
     }
     if (event.getKeySym() == "d" && event.keyDown())
@@ -88,7 +157,7 @@ void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event)
             viewer->removeAllShapes();
             for (int i=0; i<divided_objects.size(); ++i)
                 divided_objects[i].DrawBoundingBox(*viewer, i);
-            std::cout<<"找到"<<divided_objects.size()<<"个目标."<<std::endl;
+            cout<<"找到"<<divided_objects.size()<<"个目标."<<endl;
         }
         else
         {
@@ -120,35 +189,83 @@ void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event)
         if (flag_integral)
         {
             integral_mask = 0;
-            std::cout<<"已进入积分模式, 开始采集"<<MAX_COUNT<<"帧图像."<<std::endl;
+            cout<<"已进入积分模式, 开始采集"<<MAX_COUNT<<"帧图像."<<endl;
         }
         else
         {
-            count = 0;
-            std::cout<<"已退出积分模式. "<<std::endl;
+            count_frames = 0;
+            cout<<"已退出积分模式. "<<endl;
         }
     }
     if (event.getKeySym() == "l" && event.keyDown())
     {
         if (flag_paused)
         {
-            std::cout<<"请先退出p状态(暂停接收点云), 再尝试锁定结果蒙版! "<<std::endl;
+            cout<<"请先退出p状态(暂停接收点云), 再尝试锁定结果蒙版! "<<endl;
         }
         else
         {
             flag_lock = !flag_lock;
         
             if (flag_lock)
-                std::cout<<"已锁定结果蒙版. 已暂停对蒙版的计算."<<std::endl;
+                cout<<"已锁定结果蒙版. 已暂停对蒙版的计算."<<endl;
             else
-                std::cout<<"已取消对结果蒙版的锁定. "<<std::endl;
+                cout<<"已取消对结果蒙版的锁定. "<<endl;
+        }
+    }
+
+    if (event.getKeySym() == "z" && event.keyDown())
+    {
+        if (flag_viewpoint)
+        {
+            flag_viewpoint = false;
+            cout<< "已停止姿态追踪." <<endl;
+        }
+        else
+        {
+            if (MemShareIntialize())
+            {
+                flag_viewpoint = true;
+                cout << "已开始姿态追踪." <<endl;
+            }
+            else
+            {
+                flag_viewpoint = false;
+                cout << "q操作失败, 请检查蓝牙与串口模块. " <<endl;
+            }
+        }
+    }
+    if (event.getKeySym() == "x" && event.keyDown())
+    {
+        if (flag_viewpoint)
+        {
+            if (flag_sigma)
+            {
+                flag_sigma = false;
+                pcl::io::savePCDFileBinary("sigma.pcd", *cloud_sigma);
+                
+                PointCloudPtr null_cloud(new PointCloud);
+                cloud_sigma = null_cloud;
+
+                cout<< "场景采集结束, 已保存到\"sigma.pcd\"." <<endl;
+            }
+            else
+            {   
+                flag_sigma = true;
+                cout<< "开始抽样全方位场景." <<endl;
+            }
+        }
+        else
+        {
+            flag_sigma = false;
+            cout<< "请先开启姿态跟踪(z), 再尝试全方向(x)." << endl;
         }
     }
 
     if (event.getKeySym() == "r" && event.keyDown())
     {
         viewer->setCameraPosition( 0.0, 0.0, -2.5, 0.0, 0.0, 0.0 );
-        std::cout<<"视角已重置."<<std::endl;
+        cout<<"视角已重置."<<endl;
     }
 }
 
@@ -177,6 +294,11 @@ int main( int argc, char* argv[] )
     boost::signals2::connection connection = grabber->registerCallback( function );
     grabber->start();
 
+    /* flag_sigma配置 */
+    for (int i=5; i<424; i+=5)
+        for (int j=5; j<512; j+=5)
+            mask_downsample.at<uchar>(i,j)=255;
+
     while( !viewer->wasStopped() )
     {
         /* 更新viewer */
@@ -192,6 +314,11 @@ int main( int argc, char* argv[] )
                 {
                     viewer->spinOnce(200);
                     continue;
+                }
+
+                if (flag_viewpoint)
+                {
+                    MemShareGet();
                 }
 
                 if (!flag_lock)
@@ -239,23 +366,23 @@ int main( int argc, char* argv[] )
                             for (int j=0; j<integral_mask.cols; ++j)
                             {
                                 int t = integral_mask.at<uchar>(i,j);
-                                t = t * count;
+                                t = t * count_frames;
                                 if (mask.at<uchar>(i,j)) t+=255;
-                                t /= (count+1);
+                                t /= (count_frames+1);
                                 if (t>255) t=255;
                                 integral_mask.at<uchar>(i,j) = t;
 
                                 mask.at<uchar>(i,j) = (t>128)? 255:0;
                             }
-                        ++count;
-                        std::cout<<count<<"\t";
-                        if (count == MAX_COUNT)
+                        ++count_frames;
+                        cout<<count_frames<<"\t";
+                        if (count_frames == MAX_COUNT)
                         {
                             //lock_mask = mask.clone();
                             flag_lock = true;
                             flag_integral = false;
-                            count = 0;
-                            std::cout<<std::endl<<"积分模式已结束. 积分蒙版已初始化. 结果蒙版已锁定(已进入l状态). "<<std::endl<<std::endl;
+                            count_frames = 0;
+                            cout<<endl<<"积分模式已结束. 积分蒙版已初始化. 结果蒙版已锁定(已进入l状态). "<<endl<<endl;
                         }
                         cv::imshow("integral",integral_mask);
                     }
@@ -265,6 +392,20 @@ int main( int argc, char* argv[] )
                 PointCloudPtr display_cloud;
                 if (flag_all) display_cloud = GetCloudFromMask(mask_all, cloud);
                          else display_cloud = GetCloudFromMask(mask, cloud);
+                if (flag_viewpoint)
+                {
+                    RotateCloud(display_cloud);
+
+                    if (flag_sigma)
+                    {
+                        PointCloudPtr cloud_downsample = GetCloudFromMask(mask_downsample, cloud);
+                        
+                        RotateCloud(cloud_downsample);
+
+                        *cloud_sigma += *cloud_downsample;
+                        *display_cloud += *cloud_sigma;
+                    }
+                }
                 if( !viewer->updatePointCloud( display_cloud, "cloud" ) )
                     viewer->addPointCloud(display_cloud, "cloud");
 
@@ -307,19 +448,19 @@ int main( int argc, char* argv[] )
                         cd.GetDividedCluster(divided_objects);
                         for (int i=0; i<divided_objects.size(); ++i)
                             divided_objects[i].DrawBoundingBox(*viewer, i);
-                        std::cout<<"找到"<<divided_objects.size()<<"个目标."<<std::endl;
+                        cout<<"找到"<<divided_objects.size()<<"个目标."<<endl;
                     }
                     else
                     {
                         for (int i=0; i<divided_objects.size(); ++i)
                             divided_objects[i].DrawBoundingBox(*viewer, i);
-                        std::cout<<"找到"<<divided_objects.size()<<"个目标."<<std::endl;
+                        cout<<"找到"<<divided_objects.size()<<"个目标."<<endl;
                     }
                 }       
             }
             else
             {
-                std::cout<<" Warning: No cloud received!"<<std::endl;
+                cout<<" Warning: No cloud received!"<<endl;
             }
         }
     }
