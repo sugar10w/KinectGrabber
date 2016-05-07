@@ -1,9 +1,8 @@
 /*
  * Created by sugar10w, 2016.3.19
- * Last edited by sugar10w, 2016.5.1 
+ * Last edited by sugar10w, 2016.5.7 
  *
- * 从结构化点云（二维矩阵排列的点云），
- * 获得无平面蒙版
+ * 从结构化点云获得无平面蒙版
  */
 
 #include "pointcloud_filter/rgbd_plane_detector.h"
@@ -30,110 +29,65 @@ static float square_distance(const float* n1, const float* n2)
 
 /* 用pcl::PointXYZRGBNomal查找边缘点.
  * 此点的法向量方向, 与上下左右四个点的法向量差别过大的, 视作边缘点
- * TODO Kinect采集的图像的边缘处的畸变非常大, 法向量变化量基本都会超过现在设定的阈值, 导致边缘部分的平面不能正常识别! */
+ * TODO Kinect图像的**边缘处**的畸变非常大, 法向量变化量基本都会超过现在设定的阈值, 导致边缘部分的平面不能正常识别! */
 static cv::Mat GetEdgeFromDepth(PointCloudNTPtr & cloud)
 {
     cv::Mat edge(cloud->height, cloud->width, CV_8UC1);
     
-    /* 注意统一这里的格式 */
+    /* 注意ij的方向 */
     int k = 0;
     for (int i=0; i<cloud->height; ++i)
-        for (int j=cloud->width-1; j>=0; --j)
+        for (int j=cloud->width-1; j>=0; --j, ++k)
         {
-            /* 最边上的点不考虑, 防止越界 */
+            /* 最边上的点不考虑 */
             if (j==0 || j+1==cloud->width 
                 || i==0 || i+1==cloud->height)
             {
                 edge.at<uchar>(i, j)=0;
-                ++k;
                 continue;
             }
-
+            
+            /* 提取上下左右的法向量 */
             const PointNT 
                 & pt  = cloud->points[k],
                 & pt1 = cloud->points[k-cloud->width],
                 & pt2 = cloud->points[k+cloud->width],
                 & pt3 = cloud->points[k-1],
                 & pt4 = cloud->points[k+1];
-
             const float *nn  = pt.normal,
                         *nn1 = pt1.normal,
                         *nn2 = pt2.normal,
                         *nn3 = pt3.normal,
-                        *nn4 = pt4.normal;
-            
+                        *nn4 = pt4.normal;            
             /* 法向量判定 */
             if ( square_distance(nn, nn1) + square_distance(nn, nn2) +
                  square_distance(nn, nn3) + square_distance(nn, nn4) > 0.03f)
                 edge.at<uchar>(i, j) = 255;
             else 
                 edge.at<uchar>(i, j) = 0;
-
-            ++k;
         }
     return edge;
 }
 
-/* 将面积太小的黑色块填充起来,
- * ((待商榷)并找到和去除最大平面) */
+/* 将面积太小的黑色块填充起来 */
 static void RoughFixMask(PointCloudConstPtr &cloud, cv::Mat & mask)
 {
+    /* 获取轮廓 */
     const cv::Mat contour = ~mask;
-    
-    //cv::Mat fill;
-    //cv::cvtColor(mask, fill, CV_GRAY2RGB);
-
-    //获取轮廓
     std::vector<std::vector<cv::Point> > contours;
     cv::findContours( contour, contours, CV_RETR_CCOMP , CV_CHAIN_APPROX_NONE);
 
-    //int max_plane_idx = -1;
-    /*double max_plane_area = 10000;*/
-
-    //把面积小的直接填起来
+    /* 把面积小的填起来 */
     for (int idx=0; idx<contours.size(); ++idx)
     {
         if (contours[idx].size()>1800) continue;
-
         double cont_size = cv::contourArea(contours[idx]);
         if (cont_size<300) 
-        {
             cv::drawContours(mask, contours, idx, cv::Scalar(255), CV_FILLED, 4);
-            continue;
-        }
-        //if (cont_size > max_plane_area)
-        //{
-        //    //max_plane_area = cont_size;
-        //    //max_plane_idx = idx;
-
-        //    cv::Mat fill_C1(mask.size(), CV_8UC1, cv::Scalar(0));
-        //    cv::drawContours(fill_C3, contours, idx, cv::Scalar(255), CV_FILLED, 4);
-
-        //    //cv::imshow("max_plane", fill_C1);
-
-        //    PointCloudPtr max_plane = GetCloudFromMask(fill_C1, cloud);
-        //    PlaneFilter plane_filter(max_plane, 0.02);
-        //
-        //    if (plane_filter.PlaneFound())
-        //    {
-        //        cv::Mat plane_mask = plane_filter.GetMask(cloud, 0.05);
-        //        mask &= plane_mask;
-        //    }
-
-        //    std::cout<<"Contour "<<cont_size<<" has just been removed."<<std::endl;
-        //}
     }
-    /*std::cout<<std::endl;*/
-
-/*    if (max_plane_idx != -1)
-    *///{
-
-    //}
-
-    //cv::cvtColor(fill, mask, CV_RGB2GRAY);
 }
 
-/* 为了处理前端细小物体的干扰而导致区域被切分的情况，尝试对相邻的区域进行辨别形式的连接操作。 */
+/* 获取pt1-->pt2向量, 默认进行向量单位化. */
 static pcl::PointXYZ GetVector(PointT pt1, PointT pt2, bool unit=true)
 {
     pcl::PointXYZ vector;
@@ -148,7 +102,8 @@ static pcl::PointXYZ GetVector(PointT pt1, PointT pt2, bool unit=true)
     vector.z /= m;
     return vector;
 }
-static float Distance(pcl::PointXYZ unit_vector, pcl::PointXYZ vector)
+/* 计算vector点到unit_vector所在直线的距离 */
+static float CrossDistance(pcl::PointXYZ unit_vector, pcl::PointXYZ vector)
 {
     pcl::PointXYZ result;
     result.x = unit_vector.y * vector.z - unit_vector.z * vector.y;
@@ -156,69 +111,71 @@ static float Distance(pcl::PointXYZ unit_vector, pcl::PointXYZ vector)
     result.z = unit_vector.x * vector.y - unit_vector.y * vector.x;
     return sqrt(result.x * result.x + result.y * result.y + result.z * result.z);
 }
+
+/* 为了处理前端细小物体的干扰而导致区域被切分的情况，尝试对相邻的区域进行辨别形式的连接操作。 */
 static void ConnectDepthMask(PointCloudConstPtr & cloud, cv::Mat & mask)
 {
-    /* 水平方向抽取一部分的线进行处理。注意此时黑色是有效点。 */
-    const int box_size = 5;
+    /* 水平方向抽取一部分的线进行处理。注意, 此时黑色是有效点。 */
+    const int step = 5;
+    /* 直线判定时, 可接受的最大偏离误差 */
     const float dist_limit = 0.02f;
 
-    for (int x=box_size; x<cloud->height-1; x+=box_size)
+    for (int x=step; x<cloud->height-1; x+=step)
     {
-        //先计算抽取所有连续区域
+        /* 水平抽取连续黑色点, 并判定他们是否可能属于某个大平面 */
         std::vector<cv::Vec2i> pair_list;
-
         for (int y=0; y<cloud->width; ++y)
         {
-            if (mask.at<uchar>(x,y)) continue;
+            if (mask.at<uchar>(x,y)) continue;        
             
-            //直接获取持续线段范围
             int start = y, end = y+1;
             while ( end<cloud->width && !mask.at<uchar>(x, end)) ++end;
             if (end>=cloud->width) break;
             --end;
+            /* 先用线段长度初步判断 */
+            if (start==0 || end-start<=8) { y=end+1; continue;}
 
-            //检查线段合法性
-            if (end-start<=8) { /*pair_list.push_back(cv::Vec2i(0,0));*/ y=end+1; continue;}
-            if (start==0) { y=end+1; continue; }
-
+            /* 仔细检查是否共线 */
             bool valid = true;
+            /* 获取首尾连线的方程 */
             const PointT & start_point = cloud->points[(x+1)*cloud->width-start-1];
-            pcl::PointXYZ unit_vector = GetVector(start_point,cloud->points[(x+1)*cloud->width-end-1]);
+            pcl::PointXYZ unit_vector = GetVector(start_point, cloud->points[(x+1)*cloud->width-end-1]);
+            /* 逐个点判断是否超标 */
             for (int i=start+1; i<end; ++i)
-                if (Distance(unit_vector, 
-                    GetVector(start_point, cloud->points[(x+1)*cloud->width-i-1], false))
-                        > dist_limit)
+                if (CrossDistance(unit_vector, 
+                            GetVector(start_point, cloud->points[(x+1)*cloud->width-i-1], false)) > dist_limit)
                 {
                     valid = false;
                     break;
                 }
             if (valid) pair_list.push_back(cv::Vec2i(start, end));
-                 //else  pair_list.push_back(cv::Vec2i(0,0));
+            
+            /* 注意y的跳跃变化 */
             y = end;
         }
 
-        //测试相邻线段并连接
+        /* 测试相邻长线段, 并尝试连接 */
         for (int i=1; i<pair_list.size(); ++i)
         {
-            //if (pair_list[i][0]==0 && pair_list[i][1]==0 ) continue;
-            //if (pair_list[i-1][0]==0 && pair_list[i-1][1]==0 ) continue;
-
             bool bind = true;
+            /* 获取左长线段的方程 */
             PointT start_point = cloud->points[(x+1)*cloud->width-pair_list[i-1][1]-1];
             pcl::PointXYZ unit_vector = GetVector(
                 cloud->points[(x+1)*cloud->width-pair_list[i-1][0]-1],
                 cloud->points[(x+1)*cloud->width-pair_list[i-1][1]-1]);
+            /* 用左长线段方程判定右长线段 */
             for (int j=pair_list[i][0]; j<pair_list[i][1]; ++j)
-                if (Distance(unit_vector,
-                    GetVector(start_point, cloud->points[(x+1)*cloud->width-j-1], false))
-                        > dist_limit)
+                if (CrossDistance(unit_vector,
+                            GetVector(start_point, cloud->points[(x+1)*cloud->width-j-1], false)) > dist_limit)
                 {
                     bind = false;
                     break;
                 }
+
+            /* 确定左右长线段是共线的, 在蒙版上连接之 */
             if (bind)
             {
-                //绘制三条线，防止误连
+                /* 绘制三条线，防止误连 TODO */
                 for (int j=pair_list[i-1][1]; j<pair_list[i][0]; ++j) mask.at<uchar>(x-1,j)=255;
                 for (int j=pair_list[i-1][1]; j<pair_list[i][0]; ++j) mask.at<uchar>(x,j)=0;
                 for (int j=pair_list[i-1][1]; j<pair_list[i][0]; ++j) mask.at<uchar>(x+1,j)=255;
@@ -228,21 +185,20 @@ static void ConnectDepthMask(PointCloudConstPtr & cloud, cv::Mat & mask)
 
 }
 
-
 /* 从边缘图像上，过滤平面获取蒙版 */
 static cv::Mat GetMaskFromEdge(PointCloudConstPtr & cloud, PointCloudNTPtr & normals, cv::Mat & edge)
 {
-    const cv::Mat contour = ~ edge;
-
     cv::Mat output = edge.clone();
 
-    //获取轮廓
+    /* 获取edge的轮廓 */
+    const cv::Mat contour = ~ edge;
     std::vector<std::vector<cv::Point> > contours;
     cv::findContours( contour, contours, CV_RETR_CCOMP , CV_CHAIN_APPROX_NONE);
 
-    //逐个精细判断
+    /* 逐个精细判断 */
     for (int idx=0; idx<contours.size(); ++idx)
     {
+        /* 扫描每一个点 */
         cv::Mat inside(edge.size(), CV_8UC1, cv::Scalar(0));
         cv::drawContours(inside, contours, idx, cv::Scalar(255), CV_FILLED, 4);
         float nx_min = 2, nx_max = -2,
@@ -251,10 +207,10 @@ static cv::Mat GetMaskFromEdge(PointCloudConstPtr & cloud, PointCloudNTPtr & nor
               x_min = 10000, x_max = -10000,
               y_min = 10000, y_max = -10000,
               z_min = 10000, z_max = -10000;
-        // 注意统一这里的格式
+        /* 注意ij的方向 */
         int k = 0;
         for (int i=0; i<cloud->height; ++i)
-            for (int j=cloud->width-1; j>=0; --j)
+            for (int j=cloud->width-1; j>=0; --j, ++k)
             {
                 if (inside.at<uchar>(i,j))
                 {
@@ -272,11 +228,10 @@ static cv::Mat GetMaskFromEdge(PointCloudConstPtr & cloud, PointCloudNTPtr & nor
                     if (pnt.normal_y<ny_min) ny_min = pnt.normal_y;
                     if (pnt.normal_y>ny_max) ny_max = pnt.normal_y;
                     if (pnt.normal_z<nz_min) nz_min = pnt.normal_z;
-                    if (pnt.normal_z>nz_max) nz_max = pnt.normal_z;
-                    
+                    if (pnt.normal_z>nz_max) nz_max = pnt.normal_z;                    
                 }
-                ++k;
             }
+        /* 通过判定尺寸, 法向量偏转, 确定平面 */
         if (! ( (x_max-x_min)>0.6
             || (y_max-y_min)>0.6
             || (z_max-z_min)>0.6
@@ -284,11 +239,6 @@ static cv::Mat GetMaskFromEdge(PointCloudConstPtr & cloud, PointCloudNTPtr & nor
         {
             cv::drawContours(output, contours, idx, cv::Scalar(255), CV_FILLED, 4);
         }
-        //else
-        //{
-        //    OpenImage(inside, 4, 0, 0);
-        //    fill &= ~inside;
-        //}
     }
 
     return  output;
@@ -314,18 +264,15 @@ cv::Mat GetNoPlaneMask(PointCloudConstPtr & cloud)
     /* 白色部分扩张1 */
     OpenImage(edge, 1, 0, 0);
     
-    //cv::imshow("edge_0", edge);
-
-    /* 先尝试修复 */
+    /* 先尝试修复过小的黑色块 */
     RoughFixMask(cloud, edge);
-    /* 尝试平面连接 */
+    /* 尝试黑色块平面连接 */
     ConnectDepthMask(cloud, edge);
 
-    //cv::imshow("edge_1", edge);
-
-    /* 从边缘图形中找到不是背景的小平面块，成为无平面蒙版 */
+    /* 通过尺寸和法向量获取最终的蒙版 */
     cv::Mat no_plane_mask = GetMaskFromEdge(cloud, normals, edge);
-    OpenImage(no_plane_mask, 1, 0, 0);
+    /* 修复ConnectDepth; 修整蒙版 */
+    OpenImage(no_plane_mask, 1, 2, 0);
 
     return no_plane_mask;
 }

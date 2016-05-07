@@ -1,9 +1,9 @@
 /* 
  * Created by sugar10w, 2016.3.24
- * Last edited by sugar10w, 2016.3.24
+ * Last edited by sugar10w, 2016.5.7
  *
- * 利用shard图层直接获取Contours。
- * 之后参考no_plane图层确定所有Contours是否为平面。
+ * 利用shard图层获取轮廓.
+ * 之后参考no_plane图层, 将非平面的轮廓视为目标.
  */
 
 #ifndef __EDGE_CLUSTER_DIVIDER_H__
@@ -22,11 +22,10 @@ public:
     EdgeClusterDivider(PointCloudConstPtr & cloud, cv::Mat & shard_mask, cv::Mat & no_plane_mask);
     void GetDividedCluster(std::vector<ObjectCluster>& divided_objects);
     inline cv::Mat GetMask() { return mask_; }
-    inline cv::Mat GetShardMask() { return shard_mask_; }
 private:
     PointCloudConstPtr cloud_;
-    cv::Mat shard_mask_;
-    cv::Mat no_plane_mask_;
+    const cv::Mat & shard_mask_;
+    const cv::Mat & no_plane_mask_;
     cv::Mat mask_;
 
 };

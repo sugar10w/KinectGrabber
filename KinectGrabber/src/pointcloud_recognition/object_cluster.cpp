@@ -1,6 +1,6 @@
 /*
   * Created by sugar10w, 2016.2.25
-  * Last edited by sugar10w, 2016.2.25
+  * Last edited by sugar10w, 2016.5.7
   *
   * TODO 记录用于描述物体的点云
   *
@@ -17,10 +17,13 @@
  ObjectCluster::ObjectCluster(const PointCloudPtr& input_cloud, float leaf_size)
      : cloud(input_cloud), leaf_size_(leaf_size)
  {
+     /* 判断输入的点云是否合法 */
+
      int n = cloud->width * cloud->height;
      int r_sum = 0, g_sum = 0, b_sum = 0, cnt = 0;
     
-     if (n<300) 
+     /* 检查至少点的个数 */
+     if (n<80) 
      {
          valid_ = false; 
          return;
@@ -28,9 +31,9 @@
 
      valid_ = true;
 
+     /* 检查三维尺寸, 顺带统计颜色 */
      x_min = y_min = z_min = 10000;
      x_max = y_max = z_max = -10000;
- 
      for (int i=0; i<n; ++i)
      {
          PointT point = cloud->points[i];
@@ -44,42 +47,31 @@
          if (point.z<z_min) z_min = point.z;
          if (point.z>z_max) z_max = point.z;
 
-         //if (point.z>2.00)
-         //{
-         //    valid_= false;
-         //    break;
-         //}
-
          r_sum += point.r;
          g_sum += point.g;
          b_sum += point.b;
      }
-     
      if (z_max<0.5 || z_min>10.0) { valid_ = false; return; }
-
-     r_avg = r_sum / cnt; if (r_avg>255) r_avg = 255;
-     g_avg = g_sum / cnt; if (g_avg>255) g_avg = 255;
-     b_avg = b_sum / cnt; if (b_avg>255) b_avg = 255; 
-
-     //r_avg = g_avg = b_avg = 255;
      xx = x_max - x_min;
      yy = y_max - y_min;
      zz = z_max - z_min;
     
-     /* 确认是否为目标的条件 */
+     /* 最终判断三维尺寸是否合适 */
      valid_ = 
          valid_ 
          && xx < 0.50 
          && yy < 0.50
          && zz < 0.50
-         //&& yy*xx < cnt*leaf_size_*leaf_size_*3
          && 6 * (x_max - x_min) > (y_max - y_min)
-         && 6 * (y_max - y_min) > (x_max - x_min);
-     /*if (leaf_size_!=0) valid_ = 
-         valid_ ;
-     else
-         valid_ && zz*yy*xx < cnt*0.005*0.005*0.005*3;
-     */    
+         && 4 * (y_max - y_min) > (x_max - x_min);
+
+     if (valid_)
+     {
+         /* 获得平均颜色 */
+         r_avg = r_sum / cnt; if (r_avg>255) r_avg = 255;
+         g_avg = g_sum / cnt; if (g_avg>255) g_avg = 255;
+         b_avg = b_sum / cnt; if (b_avg>255) b_avg = 255; 
+     }
  }
  
  /* 在viewer上绘制方框 */
@@ -87,12 +79,11 @@
  {
      if (!valid_) return;
 
-     //if (xx<0.05 || yy<0.05) return;
-
+     /* 设定名字 */
      std::stringstream box_name;
      box_name << "object_box_" << object_number;
-     //viewer.removeShape(box_name.str());
- 
+     
+     /* 添加BoundingBox, 设置颜色和线宽 */ 
      viewer.addCube(
              x_min, x_max, y_min, y_max, z_min, z_max,
              (double)r_avg/256, (double)g_avg/256, (double)b_avg/256,

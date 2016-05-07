@@ -1,6 +1,6 @@
 /*
  * Created by sugar10w, 2016.2.27 
- * Last edited by sugar10w, 2016.2.28
+ * Last edited by sugar10w, 2016.5.7
  *
  * 找到点云中的平面
  * 从其他点云中去除平面
@@ -47,12 +47,6 @@ PlaneFilter::PlaneFilter(PointCloudPtr &cloud, float leaf_size)
 
     if (coefficients->values.size()==4)
     {
-        /*coefficients to plane_   TODO 直接采用统一格式*/
-        //plane_.resize(4);
-        //plane_(0) = coefficients->values[0];
-        //plane_(1) = coefficients->values[1];
-        //plane_(2) = coefficients->values[2];
-        //plane_(3) = coefficients->values[3];
         planes_.push_back(*coefficients);
         plane_found_ = true;
     }
@@ -90,20 +84,8 @@ void PlaneFilter::Filter(PointCloudPtr &cloud, float remove_radius)
         pcl::SampleConsensusModelPlane<PointT>::Ptr plane_model(
                 new pcl::SampleConsensusModelPlane<PointT>(cloud));
         plane_model->selectWithinDistance(plane_, remove_radius, *inliers);
-
-        //std::cout<<plane_<<std::endl;
-        //std::cout<<"remove "<<inliers->size()<<" points"<<std::endl;
-
-        /* extract*/
-        /*PointCloudPtr cloud_no_plane(new PointCloud);
-        pcl::ExtractIndices<PointT> extract;
-        extract.setInputCloud(cloud);
-        extract.setIndices(inliers);
-        extract.setNegative(true);
-        extract.filter(*cloud_no_plane);
-        cloud = cloud_no_plane;*/
         
-        /* Softly disable */
+        /* 用保持结构化的方法去除 */
         for (int i=0; i<inliers->size(); ++i)
         {
             int t = (*inliers)[i];

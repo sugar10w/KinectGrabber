@@ -1,8 +1,8 @@
 /*
  * Created by sugar10w, 2016.3.18
- * Last edited by sugar10w, 2016.3.18
+ * Last edited by sugar10w, 2016.5.7
  * 
- * 基于从KinectSDK2获取的数据。
+ * 基于从KinectSDK2获取的数据
  * 获取512*424的二维蒙版，应用到原始点云上。
  *
  */
@@ -12,6 +12,7 @@
 namespace tinker {
 namespace vision {
 
+/* 通过二维CV_8UC1蒙版, 获取点云 */
 PointCloudPtr GetCloudFromMask(const cv::Mat & mask, const PointCloudConstPtr & cloud)
 {
     assert(mask.type() == CV_8UC1);
@@ -20,30 +21,28 @@ PointCloudPtr GetCloudFromMask(const cv::Mat & mask, const PointCloudConstPtr & 
     
     std::vector<int> indices;
     
-    //注意这里的统一性
+    /* 注意ij的方向 */
     int k = 0;
     for (int i=0; i<cloud->height; ++i)
-        for (int j=cloud->width-1; j>=0; --j)
+        for (int j=cloud->width-1; j>=0; --j, ++k)
         {
             uchar img_point = mask.at<uchar>(i, j);
             if (img_point) indices.push_back(k);
-            ++k;
         }
-
+    
+    /* 生成点云 */
     PointCloudPtr extracted_cloud(new PointCloud);
     extracted_cloud->width = indices.size();
     extracted_cloud->height = 1;
-    extracted_cloud->is_dense = true;
-
     for (int i=0; i<indices.size(); ++i)
     {
         extracted_cloud->points.push_back(
             cloud->points[ indices[i] ]);
     }
-
     return extracted_cloud;
 }
 
+/* 通过检查z, 获取点云中有效点的蒙版 */
 cv::Mat GetValidMask(PointCloudConstPtr cloud)
 {
     cv::Mat mask(cloud->height, cloud->width, CV_8UC1);
@@ -53,7 +52,7 @@ cv::Mat GetValidMask(PointCloudConstPtr cloud)
         for (int j=cloud->width-1; j>=0; --j)
         {
             const PointT & pt = cloud->points[k];
-            if (pt.z>=0.8 && pt.z<=10 && pt.r+pt.g+pt.b!=0)
+            if (pt.z>=0.5 && pt.z<=10 && pt.r+pt.g+pt.b!=0)
                 mask.at<uchar>(i, j) = 255;
             else
                 mask.at<uchar>(i, j) = 0;
@@ -62,6 +61,7 @@ cv::Mat GetValidMask(PointCloudConstPtr cloud)
     return mask;
 }
 
+/* 二维图形的圆形腐蚀膨胀 */
 void OpenImage(cv::Mat & img, 
      int refill_kernel_size,
      int erode_kernel_size,
@@ -92,6 +92,7 @@ void OpenImage(cv::Mat & img,
      }
 }
 
+/* 结构化点云的二维腐蚀膨胀 */
 void OpenImage(PointCloudPtr & cloud, 
      int refill_kernel_size,
      int erode_kernel_size,
@@ -107,63 +108,48 @@ void OpenImage(PointCloudPtr & cloud,
 /* 处理Kinect在物体边缘部分产生的拉伸散点 */
 cv::Mat GetShardMask(PointCloudConstPtr & cloud)
 {
-    const float dist_limit = 0.01*0.01;
+    /* TODO 考虑square_dist_limit的设定 */
+    const float square_dist_limit = 0.01*0.01;
 
     cv::Mat mask = cv::Mat::zeros(cloud->height, cloud->width, CV_8UC1);
 
-    // 注意统一这里的格式
+    /* 注意ij的方向 */
     int k = 0;
     for (int i=0; i<cloud->height; ++i)
-        for (int j=cloud->width-1; j>=0; --j)
+        for (int j=cloud->width-1; j>=0; --j, ++k)
         {
-            if (cloud->points[k].z>/*2.00*/10.00 || cloud->points[k].z<0.3) 
+            /* 判断无效点 */
+            if (cloud->points[k].z>10.00 || cloud->points[k].z<0.5) 
             {
                 mask.at<uchar>(i,j)=255;
-                ++k;
                 continue;
             }
-
+             
+            /* 不处理边缘部分 */
             if (j==0 || j+1==cloud->width 
                 || i==0 || i+1==cloud->height)
-            {
-                ++k;
                 continue;
-            }
-
+            
+            /* 提取出左侧和下侧的点 */
             const PointT pt0 = cloud->points[k],
                          pt1 = cloud->points[k+1],
-                         //pt3 = cloud->points[k-1],
-                         pt2 = cloud->points[k+cloud->width]/*,
-                         pt4 = cloud->points[k-cloud->width]*/;
-
-            pcl::PointXYZ pt_1 (
-                (pt0.x-pt1.x)*(pt0.x-pt1.x),
-                (pt0.y-pt1.y)*(pt0.y-pt1.y),
-                (pt0.z-pt1.z)*(pt0.z-pt1.z)),
-                        pt_2 (
-                (pt0.x-pt2.x)*(pt0.x-pt2.x),
-                (pt0.y-pt2.y)*(pt0.y-pt2.y),
-                (pt0.z-pt2.z)*(pt0.z-pt2.z))/*,
-                        pt_3 (
-                (pt0.x-pt3.x)*(pt0.x-pt3.x),
-                (pt0.y-pt3.y)*(pt0.y-pt3.y),
-                (pt0.z-pt3.z)*(pt0.z-pt3.z)),
-                        pt_4 (
-                (pt0.x-pt4.x)*(pt0.x-pt4.x),
-                (pt0.y-pt4.y)*(pt0.y-pt4.y),
-                (pt0.z-pt4.z)*(pt0.z-pt4.z))*/;
-                        
-            if ( pt_1.x+pt_1.y+pt_1.z>dist_limit
-              || pt_2.x+pt_2.y+pt_2.z>dist_limit
-              //|| pt_3.x+pt_3.y+pt_3.z>dist_limit
-              //|| pt_4.x+pt_4.y+pt_4.z>dist_limit
+                         pt2 = cloud->points[k+cloud->width];
+            pcl::PointXYZ 
+                pt_1 (
+                    (pt0.x-pt1.x)*(pt0.x-pt1.x),
+                    (pt0.y-pt1.y)*(pt0.y-pt1.y),
+                    (pt0.z-pt1.z)*(pt0.z-pt1.z)),
+                pt_2 (
+                    (pt0.x-pt2.x)*(pt0.x-pt2.x),
+                    (pt0.y-pt2.y)*(pt0.y-pt2.y),
+                    (pt0.z-pt2.z)*(pt0.z-pt2.z));
+            
+            /* 按照距离, 纵深斜率判断 */     
+            if ( pt_1.x+pt_1.y+pt_1.z>square_dist_limit
+              || pt_2.x+pt_2.y+pt_2.z>square_dist_limit
               || pt_1.z > (pt_1.x+pt_1.y)*9
-              || pt_2.z > (pt_2.x+pt_2.y)*9
-              //|| pt_3.z > (pt_3.x+pt_3.y)*9
-              //|| pt_4.z > (pt_4.x+pt_4.y)*9
-             )
+              || pt_2.z > (pt_2.x+pt_2.y)*9 )
                 mask.at<uchar>(i,j)=255;
-            k++;
         }
     return mask;
 }
