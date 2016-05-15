@@ -47,6 +47,7 @@ bool flag_integral = false; /* i 积分模式          */
 bool flag_lock = false;     /* l 锁定蒙版          */
 bool flag_viewpoint = false;/* z 接收蓝牙姿态信息  */
 bool flag_sigma = false;    /* x 在有姿态信息的情况下进行积分 */
+bool flag_capture = false;  /* s 截取一帧的点云  */
 
 /* 处理过程中的各个关键蒙版 */
 cv::Mat mask(424, 512, CV_8UC1, cv::Scalar(0));             /* 过滤结果 */
@@ -276,6 +277,14 @@ void keyboardEventOccurred (const pcl::visualization::KeyboardEvent &event)
         viewer->setCameraPosition( 0.0, 0.0, -2.5, 0.0, 0.0, 0.0 );
         cout<<"视角已重置."<<endl;
     }
+
+    if (event.getKeySym() == "s" && event.keyDown() )
+    {
+        if (!flag_paused)
+            flag_capture = true;
+        else 
+            cout<< "请先退出p模式, 再尝试保存点云." << endl;
+    }
 }
 
 int main( int argc, char* argv[] )
@@ -405,6 +414,11 @@ int main( int argc, char* argv[] )
             }
             if( !viewer->updatePointCloud( display_cloud, "cloud" ) )
                 viewer->addPointCloud(display_cloud, "cloud");
+            if (flag_capture)
+            {
+                pcl::io::savePCDFileBinary("capture.pcd", *display_cloud);
+                flag_capture = false;
+            }
 
             if (flag_color)
             {
